@@ -1,0 +1,50 @@
+name: ETHPriceWidget
+options:
+  bundleIdPrefix: com.example
+  deploymentTarget:
+    macOS: "14.0"
+settings:
+  base:
+    SWIFT_VERSION: "5.9"
+    DEVELOPMENT_TEAM: ""
+targets:
+  ETHPriceWidget:
+    type: application
+    platform: macOS
+    sources:
+      - path: App
+      - path: Shared
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.example.ETHPriceWidget
+        PRODUCT_NAME: ETH Price Widget
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_CFBundleDisplayName: ETH Price Widget
+        CODE_SIGN_ENTITLEMENTS: App/ETHPriceWidget.entitlements
+    dependencies:
+      - target: PriceWidgetExtension
+        embed: true
+  PriceWidgetExtension:
+    type: app-extension
+    platform: macOS
+    sources:
+      - path: Widget
+      - path: Shared
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.example.ETHPriceWidget.PriceWidget
+        PRODUCT_NAME: ETH & CRCLB
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_CFBundleDisplayName: ETH & CRCLB
+        INFOPLIST_KEY_NSExtension_NSExtensionPointIdentifier: com.apple.widgetkit-extension
+        SKIP_INSTALL: YES
+        CODE_SIGN_ENTITLEMENTS: Widget/PriceWidget.entitlements
+schemes:
+  ETHPriceWidget:
+    build:
+      targets:
+        ETHPriceWidget: all
+        PriceWidgetExtension: all
+    run:
+      config: Debug
+
