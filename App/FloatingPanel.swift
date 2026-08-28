@@ -5,6 +5,9 @@ import SwiftUI
 final class FloatingPanelController: NSObject, NSWindowDelegate {
     private let store: PriceStore
     private let panel: NSPanel
+    private var eventMonitors: [Any] = []
+    private var captureRestoreTask: Task<Void, Never>?
+    private var isHiddenForCapture = false
 
     init(store: PriceStore) {
         self.store = store
@@ -21,6 +24,7 @@ final class FloatingPanelController: NSObject, NSWindowDelegate {
         panel.level = .floating
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.isMovableByWindowBackground = true
+        panel.ignoresMouseEvents = true
         panel.isOpaque = false
         panel.backgroundColor = .clear
         panel.hasShadow = false
@@ -34,6 +38,13 @@ final class FloatingPanelController: NSObject, NSWindowDelegate {
             name: .togglePricePanel,
             object: nil
         )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(togglePanelInteraction),
+            name: .togglePricePanelInteraction,
+            object: nil
+        )
+        installScreenshotMonitors()
     }
 
     func show() {
@@ -53,6 +64,83 @@ final class FloatingPanelController: NSObject, NSWindowDelegate {
         }
     }
 
+    @objc private func togglePanelInteraction() {
+        let interactive = panel.ignoresMouseEvents
+        panel.ignoresMouseEvents = !interactive
+        store.setPanelInteractive(interactive)
+        if interactive {
+            panel.orderFrontRegardless()
+        }
+    }
+
+    private func installScreenshotMonitors() {
+        let mask: NSEvent.EventTypeMask = [.keyDown, .leftMouseUp]
+
+        if !CGPreflightListenEventAccess() {
+            CGRequestListenEventAccess()
+        }
+
+        if let globalMonitor = NSEvent.addGlobalMonitorForEvents(
+            matching: mask,
+            handler: { [weak self] event in
+                Task { @MainActor in self?.handleMonitoredEvent(event) }
+            }
+        ) {
+            eventMonitors.append(globalMonitor)
+        }
+
+        if let localMonitor = NSEvent.addLocalMonitorForEvents(
+            matching: mask,
+            handler: { [weak self] event in
+                Task { @MainActor in self?.handleMonitoredEvent(event) }
+                return event
+            }
+        ) {
+            eventMonitors.append(localMonitor)
+        }
+    }
+
+    private func handleMonitoredEvent(_ event: NSEvent) {
+        if event.type == .keyDown,
+           event.modifierFlags.intersection(.deviceIndependentFlagsMask).contains([.command, .shift]),
+           let key = event.charactersIgnoringModifiers,
+           ["3", "4", "5"].contains(key) {
+            hideForScreenshot(shortcut: key)
+            return
+        }
+
+        if event.type == .leftMouseUp, isHiddenForCapture {
+            scheduleCaptureRestore(after: .milliseconds(700))
+        }
+    }
+
+    private func hideForScreenshot(shortcut: String) {
+        guard panel.isVisible else { return }
+        isHiddenForCapture = true
+        panel.orderOut(nil)
+
+        // Full-screen capture is immediate. Selection/window capture restores
+        // after the finishing click, with this timeout as a safety fallback.
+        scheduleCaptureRestore(after: shortcut == "3" ? .seconds(1) : .seconds(60))
+    }
+
+    private func scheduleCaptureRestore(after duration: Duration) {
+        captureRestoreTask?.cancel()
+        captureRestoreTask = Task { [weak self] in
+            try? await Task.sleep(for: duration)
+            guard !Task.isCancelled else { return }
+            self?.restoreAfterScreenshot()
+        }
+    }
+
+    private func restoreAfterScreenshot() {
+        guard isHiddenForCapture else { return }
+        isHiddenForCapture = false
+        if store.isPanelVisible {
+            panel.orderFrontRegardless()
+        }
+    }
+
     func windowWillClose(_ notification: Notification) {
         store.setPanelVisible(false)
     }
@@ -68,6 +156,7 @@ final class FloatingPanelController: NSObject, NSWindowDelegate {
 
 extension Notification.Name {
     static let togglePricePanel = Notification.Name("togglePricePanel")
+    static let togglePricePanelInteraction = Notification.Name("togglePricePanelInteraction")
 }
 
 struct FloatingPriceCard: View {

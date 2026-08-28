@@ -42,6 +42,10 @@ struct MenuBarContent: View {
         }
         .keyboardShortcut("p")
 
+        Button(store.isPanelInteractive ? "锁定位置并穿透鼠标" : "移动悬浮卡片") {
+            NotificationCenter.default.post(name: .togglePricePanelInteraction, object: nil)
+        }
+
         Divider()
         Button("退出") {
             NSApplication.shared.terminate(nil)
@@ -62,4 +66,3 @@ private struct PriceMenuRow: View {
         }
     }
 }
-

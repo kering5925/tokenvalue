@@ -28,7 +28,7 @@ The generated app is ad-hoc signed for personal use on this Mac. It doesn't incl
 5. Run the `ETHPriceWidget` scheme.
 6. Add “ETH & CRCLB” from the macOS widget gallery.
 
-The menu bar and floating card refresh every 60 seconds while the app is running. Drag the floating card from anywhere on its background; its position is restored at next launch. Use the menu bar menu to hide/show it or refresh immediately.
+The menu bar and floating card refresh every 60 seconds while the app is running. The card is click-through by default, so the mouse operates the window underneath it. Choose **移动悬浮卡片** from the menu bar before dragging it; lock it again when finished. Its position is restored at next launch. Screenshot shortcuts ⇧⌘3/4/5 temporarily hide the card and restore it after capture.
 
 The app runs as an accessory (no Dock icon). Choose **退出** from its menu bar menu to stop it. The separate WidgetKit widget remains system-scheduled and can't guarantee one-minute refreshes.
 

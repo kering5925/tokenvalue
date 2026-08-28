@@ -11,6 +11,7 @@ final class PriceStore {
     private(set) var errorMessage: String?
     private(set) var isLoading = false
     private(set) var isPanelVisible = true
+    private(set) var isPanelInteractive = false
 
     private var refreshTask: Task<Void, Never>?
 
@@ -49,5 +50,8 @@ final class PriceStore {
     func setPanelVisible(_ visible: Bool) {
         isPanelVisible = visible
     }
-}
 
+    func setPanelInteractive(_ interactive: Bool) {
+        isPanelInteractive = interactive
+    }
+}
