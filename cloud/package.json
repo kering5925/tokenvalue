@@ -1,0 +1,14 @@
+{
+  "name": "tokenvalue-paper-trader",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "deploy": "vercel --prod",
+    "schedule": "node --env-file=.env.local scripts/create-schedule.js"
+  },
+  "devDependencies": {
+    "@neondatabase/serverless": "^1.0.2",
+    "vercel": "59.16.0"
+  }
+}
