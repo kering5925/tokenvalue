@@ -4,13 +4,14 @@ actor PriceService {
     static let shared = PriceService()
 
     private let endpoint = URL(
-        string: "https://coins.llama.fi/prices/current/coingecko:ethereum,bsc:0x80f3d493ebce97e343c53d29a137942416b4ffc0"
+        string: "https://data-api.binance.vision/api/v3/ticker/price?symbols=%5B%22ETHUSDT%22,%22CRCLBUSDT%22%5D"
     )!
 
     func fetch() async throws -> PriceSnapshot {
         var request = URLRequest(url: endpoint)
         request.timeoutInterval = 12
-        request.cachePolicy = .reloadRevalidatingCacheData
+        request.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+        request.setValue("no-cache", forHTTPHeaderField: "Cache-Control")
 
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let httpResponse = response as? HTTPURLResponse,
@@ -18,41 +19,38 @@ actor PriceService {
             throw PriceError.invalidResponse
         }
 
-        let payload = try JSONDecoder().decode(Response.self, from: data)
-        guard let ethereum = payload.coins[Keys.ethereum],
-              let crclb = payload.coins[Keys.crclb] else {
+        let tickers = try JSONDecoder().decode([Ticker].self, from: data)
+        let prices = Dictionary(uniqueKeysWithValues: tickers.map { ($0.symbol, $0) })
+        guard let ethereum = prices[Keys.ethereum],
+              let crclb = prices[Keys.crclb] else {
             throw PriceError.missingAsset
         }
 
+        let fetchedAt = Date.now
+
         return PriceSnapshot(
-            ethereum: ethereum.asset,
-            crclb: crclb.asset,
-            fetchedAt: .now
+            ethereum: try ethereum.asset(named: "ETH", at: fetchedAt),
+            crclb: try crclb.asset(named: "CRCLB", at: fetchedAt),
+            fetchedAt: fetchedAt
         )
     }
 }
 
 private extension PriceService {
     enum Keys {
-        static let ethereum = "coingecko:ethereum"
-        static let crclb = "bsc:0x80f3d493ebce97e343c53d29a137942416b4ffc0"
+        static let ethereum = "ETHUSDT"
+        static let crclb = "CRCLBUSDT"
     }
 
-    struct Response: Decodable {
-        let coins: [String: Coin]
-    }
-
-    struct Coin: Decodable {
-        let price: Double
+    struct Ticker: Decodable {
         let symbol: String
-        let timestamp: TimeInterval
+        let price: String
 
-        var asset: AssetPrice {
-            AssetPrice(
-                symbol: symbol.uppercased(),
-                price: price,
-                timestamp: Date(timeIntervalSince1970: timestamp)
-            )
+        func asset(named name: String, at timestamp: Date) throws -> AssetPrice {
+            guard let value = Double(price) else {
+                throw PriceError.invalidResponse
+            }
+            return AssetPrice(symbol: name, price: value, timestamp: timestamp)
         }
     }
 }
@@ -68,4 +66,3 @@ enum PriceError: LocalizedError {
         }
     }
 }
-

@@ -16,6 +16,7 @@ swiftc \
   -framework AppKit \
   -framework SwiftUI \
   -framework WidgetKit \
+  -framework UserNotifications \
   "$SCRIPT_DIR"/App/*.swift \
   "$SCRIPT_DIR"/Shared/*.swift \
   -o "$MACOS_DIR/ETHPriceWidget"
@@ -27,4 +28,3 @@ codesign \
   "$APP_BUNDLE"
 
 echo "$APP_BUNDLE"
-

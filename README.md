@@ -5,7 +5,7 @@ A native macOS 14+ menu bar app, floating desktop card, and WidgetKit widget sho
 - ETH (Ethereum)
 - CRCLB (Circle Internet Group bStocks tokenized stock on BNB Smart Chain)
 
-Prices come from the public DeFiLlama Coins API and don't require an API key.
+Prices come from Binance's public market-data API and don't require an API key.
 
 ## Run without Xcode (menu bar + floating card)
 
@@ -30,10 +30,14 @@ The generated app is ad-hoc signed for personal use on this Mac. It doesn't incl
 
 The menu bar and floating card refresh every 60 seconds while the app is running. The card is click-through by default, so the mouse operates the window underneath it. Choose **移动悬浮卡片** from the menu bar before dragging it; lock it again when finished. Its position is restored at next launch. Screenshot shortcuts ⇧⌘3/4/5 temporarily hide the card and restore it after capture.
 
+The app shows ETH prices but no longer generates ETH trading alerts. CRCLB alerts and the simulated position state come from the cloud v2 strategy. During regular NYSE trading, entries require live CRCL confirmation; outside regular hours, stricter CRCLB-only trend and volume rules may trigger simulated trades at reduced size. Stale or unreachable cloud data is shown as unavailable. Alerts are research-only and do not place real trades.
+
+Separately, the floating card and menu bar watch closed 15-minute Binance candles for early bottom/top observations on both ETH and CRCLB. A signal requires a test of the recent low/high, a strong rejection close, improving/weakening RSI, and volume at least 1.2× its recent median. Each new candle can produce at most one macOS notification if notifications are allowed. These are observations, not confirmed reversals or automatic trades; they update only while the desktop app is running.
+
 The app runs as an accessory (no Dock icon). Choose **退出** from its menu bar menu to stop it. The separate WidgetKit widget remains system-scheduled and can't guarantee one-minute refreshes.
 
 ## Data source
 
-The app fetches both assets in one request:
+The app fetches both Binance spot pairs in one request:
 
-`https://coins.llama.fi/prices/current/coingecko:ethereum,bsc:0x80f3d493ebce97e343c53d29a137942416b4ffc0`
+`https://data-api.binance.vision/api/v3/ticker/price?symbols=["ETHUSDT","CRCLBUSDT"]`

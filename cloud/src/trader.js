@@ -93,7 +93,10 @@ async function marketSnapshot() {
     klines(ACTIVE_SYMBOL, "5m", 200),
     klines(ACTIVE_SYMBOL, "15m", 300),
     klines(ACTIVE_SYMBOL, "1h", 200),
-    crclSnapshot(),
+    crclSnapshot().catch((error) => {
+      console.warn(`CRCL quote unavailable: ${error.message}`);
+      return { marketOpen: regularSession(Date.now()), fresh: false, price: null };
+    }),
   ]);
   return {
     assessment: assessCRCLB(fiveMinute, fifteenMinute, hourly, underlying),
@@ -113,8 +116,10 @@ async function openPosition(price, assessment) {
   const sql = getSql();
   const { account, equity } = await accountEquity();
   const stopDistance = Math.min(MAX_STOP_DISTANCE, Math.max(MIN_STOP_DISTANCE, assessment.atrPercent * 1.5));
-  const riskNotional = equity * RISK_PER_TRADE / stopDistance;
-  const notional = Math.min(riskNotional, equity * MAX_POSITION_FRACTION, account.cash_usdt / (1 + SIDE_FEE_RATE));
+  const tokenOnly = assessment.reason === "token-only-entry";
+  const riskNotional = equity * RISK_PER_TRADE * (tokenOnly ? 0.5 : 1) / stopDistance;
+  const notional = Math.min(riskNotional, equity * (tokenOnly ? 0.10 : MAX_POSITION_FRACTION),
+    account.cash_usdt / (1 + SIDE_FEE_RATE));
   if (notional < 10) return false;
   const quantity = notional / price;
   const fee = notional * SIDE_FEE_RATE;
@@ -127,7 +132,7 @@ async function openPosition(price, assessment) {
         ${price * (1 + stopDistance * REWARD_MULTIPLE)}, ${price}, ${now}, ${STRATEGY})`,
     sql`INSERT INTO trades (symbol, side, price, quantity, fee, realized_pnl, reason, created_at, strategy)
       VALUES (${ACTIVE_SYMBOL}, 'BUY', ${price}, ${quantity}, ${fee}, NULL,
-        ${`confirmed CRCL trend; premium ${assessment.premium?.toFixed(4)}`}, ${now}, ${STRATEGY})`,
+        ${tokenOnly ? "CRCLB-only off-hours breakout" : `confirmed CRCL trend; premium ${assessment.premium?.toFixed(4)}`}, ${now}, ${STRATEGY})`,
   ]);
   return true;
 }
@@ -190,7 +195,7 @@ async function runCRCLB() {
       position = undefined;
       action = "take-profit";
     } else if (assessment.releasedSignal === "sell") {
-      await closePosition(position, price, "crcl-trend-exit");
+      await closePosition(position, price, assessment.reason);
       position = undefined;
       action = "sell";
     } else if (heldTooLong && price <= position.entry_price) {

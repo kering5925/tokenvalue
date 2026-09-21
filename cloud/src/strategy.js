@@ -63,6 +63,12 @@ export function assessCRCLB(fiveMinute, fifteenMinute, hourly, underlying) {
   const fairPrice = premium !== null && premium >= -0.03 && premium <= 0.0075;
   const enoughMovement = atrPercent >= ROUND_TRIP_COST * 1.5;
   const volumeConfirmed = volumeRatio >= 1.25;
+  const offHours = !underlying?.marketOpen;
+  const tokenOnlyEntry = offHours
+    && hourlyTrendUp
+    && breakout
+    && volumeRatio >= 1.5
+    && enoughMovement;
 
   let score = 0;
   if (hourlyTrendUp) score += 25;
@@ -71,18 +77,24 @@ export function assessCRCLB(fiveMinute, fifteenMinute, hourly, underlying) {
   if (volumeConfirmed) score += 15;
   if (reclaimedEMA || breakout) score += 15;
   if (enoughMovement) score += 5;
+  if (offHours) {
+    score = (hourlyTrendUp ? 25 : 0) + (volumeRatio >= 1.5 ? 25 : 0)
+      + (breakout ? 25 : 0) + (enoughMovement ? 25 : 0);
+  }
 
-  const buy = score >= 85
+  const regularBuy = score >= 85
     && hourlyTrendUp
     && underlyingConfirmed
     && fairPrice
     && volumeConfirmed
     && (reclaimedEMA || breakout)
     && enoughMovement;
-  const sell = underlying?.marketOpen
+  const buy = regularBuy || tokenOnlyEntry;
+  const sell = (underlying?.marketOpen
     && underlying?.fresh
     && underlying.price < underlying.ema20
-    && latest15m.close < currentEMA15m;
+    && latest15m.close < currentEMA15m)
+    || (offHours && !hourlyTrendUp && latest15m.close < currentEMA15m);
 
   return {
     close: latest15m.close,
@@ -95,12 +107,13 @@ export function assessCRCLB(fiveMinute, fifteenMinute, hourly, underlying) {
     averageNetReturn: 0,
     atrPercent,
     premium,
-    reason: buy ? "confirmed-entry" : sell ? "trend-exit" : marketReason(underlying),
+    reason: buy ? (offHours ? "token-only-entry" : "confirmed-entry")
+      : sell ? (offHours ? "token-only-exit" : "trend-exit") : marketReason(underlying),
   };
 }
 
 function marketReason(underlying) {
-  if (!underlying?.marketOpen) return "outside-regular-session";
+  if (!underlying?.marketOpen) return "off-hours-conditions-not-met";
   if (!underlying?.fresh) return "stale-underlying";
   return "conditions-not-met";
 }

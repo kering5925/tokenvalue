@@ -32,6 +32,18 @@ struct MenuBarContent: View {
         }
 
         Divider()
+        SignalMenuRow(assessment: store.signal(for: "ETH"))
+        SignalMenuRow(assessment: store.signal(for: "CRCLB"))
+        if let signalError = store.signalErrorMessage {
+            Text("信号更新失败：\(signalError)")
+        }
+        Divider()
+        ForEach(["ETH", "CRCLB"], id: \.self) { symbol in
+            let point = store.turningPoint(for: symbol)
+            Text("\(symbol) · \(point.kind.rawValue) · \(point.reason)")
+        }
+
+        Divider()
         Button("立即刷新") {
             Task { await store.refresh() }
         }
@@ -51,6 +63,18 @@ struct MenuBarContent: View {
             NSApplication.shared.terminate(nil)
         }
         .keyboardShortcut("q")
+    }
+}
+
+private struct SignalMenuRow: View {
+    let assessment: SignalAssessment
+
+    var body: some View {
+        Text(
+            "\(assessment.symbol) · \(assessment.signal.rawValue) "
+                + "\(assessment.signal == .paused || assessment.signal == .unavailable ? "" : "\(assessment.score) · ")"
+                + assessment.reasons.prefix(2).joined(separator: " / ")
+        )
     }
 }
 

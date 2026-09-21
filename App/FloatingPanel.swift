@@ -12,7 +12,7 @@ final class FloatingPanelController: NSObject, NSWindowDelegate {
     init(store: PriceStore) {
         self.store = store
         panel = NSPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 330, height: 178),
+            contentRect: NSRect(x: 0, y: 0, width: 330, height: 268),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
@@ -51,6 +51,7 @@ final class FloatingPanelController: NSObject, NSWindowDelegate {
         if !panel.setFrameUsingName("PriceFloatingPanel") {
             panel.setFrameOrigin(defaultOrigin())
         }
+        panel.setContentSize(NSSize(width: 330, height: 268))
         panel.orderFrontRegardless()
         store.setPanelVisible(true)
     }
@@ -185,7 +186,25 @@ struct FloatingPriceCard: View {
                     Divider().frame(height: 50)
                     FloatingAsset(asset: snapshot.crclb, color: .green)
                 }
-                Text("每分钟刷新 · \(PriceFormatters.updated(snapshot.fetchedAt))")
+
+                HStack(spacing: 16) {
+                    CompactSignal(
+                        symbol: "ETH",
+                        assessment: store.signal(for: "ETH")
+                    )
+                    CompactSignal(
+                        symbol: "CRCLB",
+                        assessment: store.signal(for: "CRCLB")
+                    )
+                }
+
+                HStack {
+                    TurningPointBadge(assessment: store.turningPoint(for: "ETH"))
+                    Spacer(minLength: 8)
+                    TurningPointBadge(assessment: store.turningPoint(for: "CRCLB"))
+                }
+
+                Text("每分钟刷新 · \(PriceFormatters.updated(snapshot.fetchedAt)) · CRCLB云端v2")
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
             } else if let error = store.errorMessage {
@@ -198,7 +217,7 @@ struct FloatingPriceCard: View {
             }
         }
         .padding(18)
-        .frame(width: 330, height: 178)
+        .frame(width: 330, height: 268)
         .background {
             RoundedRectangle(cornerRadius: 20)
                 .fill(.ultraThinMaterial)
@@ -208,6 +227,21 @@ struct FloatingPriceCard: View {
             RoundedRectangle(cornerRadius: 20)
                 .strokeBorder(.white.opacity(0.10))
         }
+    }
+}
+
+private struct CompactSignal: View {
+    let symbol: String
+    let assessment: SignalAssessment
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(symbol)
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.secondary)
+            SignalBadge(assessment: assessment, compact: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 

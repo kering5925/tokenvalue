@@ -16,7 +16,7 @@ struct ETHPriceWidgetApp: App {
 
         Settings {
             PriceDashboard(store: store)
-                .frame(minWidth: 430, minHeight: 280)
+                .frame(minWidth: 520, minHeight: 360)
         }
     }
 }
@@ -34,4 +34,3 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         panelController = controller
     }
 }
-
