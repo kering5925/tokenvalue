@@ -60,11 +60,30 @@ export async function ensureSchema() {
   await sql`ALTER TABLE signal_state ADD COLUMN IF NOT EXISTS reason text NOT NULL DEFAULT ''`;
   await sql`ALTER TABLE signal_state ADD COLUMN IF NOT EXISTS premium double precision`;
   await sql`ALTER TABLE signal_state ADD COLUMN IF NOT EXISTS atr_percent double precision NOT NULL DEFAULT 0`;
+  await sql`ALTER TABLE signal_state ALTER COLUMN win_rate DROP NOT NULL`;
+  await sql`ALTER TABLE signal_state ALTER COLUMN average_net_return DROP NOT NULL`;
   await sql`CREATE TABLE IF NOT EXISTS strategy_runs (
     strategy text PRIMARY KEY,
     started_at timestamptz NOT NULL,
     starting_equity double precision NOT NULL
   )`;
+  await sql`CREATE TABLE IF NOT EXISTS signal_observations (
+    source text NOT NULL,
+    symbol text NOT NULL,
+    candle_time bigint NOT NULL,
+    close_price double precision NOT NULL,
+    signal text NOT NULL,
+    score integer,
+    reason text NOT NULL,
+    return_30m double precision,
+    return_60m double precision,
+    return_90m double precision,
+    recorded_at timestamptz NOT NULL DEFAULT NOW(),
+    checked_at timestamptz NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (source, symbol, candle_time)
+  )`;
+  await sql`UPDATE signal_state SET win_rate = NULL, average_net_return = NULL
+    WHERE sample_count = 0 AND (win_rate IS NOT NULL OR average_net_return IS NOT NULL)`;
   await sql`INSERT INTO account (id, cash_usdt, initial_usdt, updated_at)
     VALUES (1, 10000, 10000, NOW()) ON CONFLICT (id) DO NOTHING`;
 }

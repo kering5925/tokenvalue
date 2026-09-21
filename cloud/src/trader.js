@@ -1,5 +1,6 @@
 import { getSql, ensureSchema } from "./db.js";
 import { assessCRCLB } from "./strategy.js";
+import { assessTurningPoint, recordObservation, TURNING_POINT_SOURCE } from "./observations.js";
 
 const ACTIVE_SYMBOL = "CRCLBUSDT";
 const STRATEGY = "crclb-underlying-v2";
@@ -102,6 +103,7 @@ async function marketSnapshot() {
     assessment: assessCRCLB(fiveMinute, fifteenMinute, hourly, underlying),
     price: fiveMinute.at(-1).close,
     underlying,
+    fifteenMinute,
   };
 }
 
@@ -180,7 +182,7 @@ async function retireLegacyPositions() {
 
 async function runCRCLB() {
   const sql = getSql();
-  const { assessment, price, underlying } = await marketSnapshot();
+  const { assessment, price, underlying, fifteenMinute } = await marketSnapshot();
   let [position] = await sql`SELECT * FROM positions WHERE symbol = ${ACTIVE_SYMBOL}`;
   let action = "none";
   if (position) {
@@ -218,20 +220,41 @@ async function runCRCLB() {
     (symbol, last_candle_time, last_raw_signal, score, released_signal, sample_count, win_rate,
       average_net_return, reason, premium, atr_percent, updated_at)
     VALUES (${ACTIVE_SYMBOL}, ${assessment.closeTime || 0}, ${assessment.rawSignal}, ${assessment.score},
-      ${assessment.releasedSignal}, 0, 0, 0, ${assessment.reason}, ${assessment.premium},
+      ${assessment.releasedSignal}, 0, NULL, NULL, ${assessment.reason}, ${assessment.premium},
       ${assessment.atrPercent}, ${now})
     ON CONFLICT (symbol) DO UPDATE SET
       last_candle_time = EXCLUDED.last_candle_time, last_raw_signal = EXCLUDED.last_raw_signal,
       score = EXCLUDED.score, released_signal = EXCLUDED.released_signal, sample_count = 0,
-      win_rate = 0, average_net_return = 0, reason = EXCLUDED.reason, premium = EXCLUDED.premium,
+      win_rate = NULL, average_net_return = NULL, reason = EXCLUDED.reason, premium = EXCLUDED.premium,
       atr_percent = EXCLUDED.atr_percent, updated_at = EXCLUDED.updated_at`;
+  await recordObservation(sql, STRATEGY, ACTIVE_SYMBOL, fifteenMinute, {
+    signal: assessment.rawSignal,
+    score: assessment.score,
+    reason: assessment.reason,
+    closeTime: assessment.closeTime,
+    close: assessment.close,
+  });
   return { symbol: ACTIVE_SYMBOL, price, action, underlying, ...assessment };
+}
+
+async function recordTurningPoints() {
+  const sql = getSql();
+  const results = {};
+  for (const symbol of ["ETHUSDT", "CRCLBUSDT"]) {
+    const candles = await klines(symbol, "15m", 200);
+    const assessment = assessTurningPoint(symbol, candles);
+    await recordObservation(sql, TURNING_POINT_SOURCE, symbol, candles, assessment);
+    results[symbol] = assessment.signal;
+  }
+  return results;
 }
 
 export async function runCycle() {
   await ensureSchema();
   const run = await retireLegacyPositions();
-  return { strategy: STRATEGY, run, results: [await runCRCLB()] };
+  const result = await runCRCLB();
+  const turningPoints = await recordTurningPoints();
+  return { strategy: STRATEGY, run, results: [result], turningPoints };
 }
 
 export async function getStatus() {

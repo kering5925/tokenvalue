@@ -67,7 +67,7 @@ final class PriceStore {
         }
 
         do {
-            let assessments = try await MarketHistoryService.shared.turningPoints()
+            let assessments = try await CloudTurningPointService.fetch()
             turningPoints = assessments
             for assessment in assessments.values {
                 await TurningPointNotifier.notifyIfNew(assessment)
@@ -76,8 +76,8 @@ final class PriceStore {
             return
         } catch {
             turningPoints = [
-                "ETH": .unavailable(symbol: "ETH", reason: "K线获取失败"),
-                "CRCLB": .unavailable(symbol: "CRCLB", reason: "K线获取失败")
+                "ETH": .unavailable(symbol: "ETH", reason: "云端拐点获取失败"),
+                "CRCLB": .unavailable(symbol: "CRCLB", reason: "云端拐点获取失败")
             ]
         }
     }
