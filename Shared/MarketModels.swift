@@ -15,6 +15,7 @@ struct Candle: Codable, Hashable, Sendable {
 enum TradeSignal: String, Codable, Sendable {
     case buy = "买入观察"
     case sell = "卖出观察"
+    case risk = "下行风险"
     case neutral = "观望"
     case paused = "策略已停用"
     case unavailable = "信号不可用"

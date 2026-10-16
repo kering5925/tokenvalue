@@ -1,7 +1,8 @@
 import Foundation
 
 enum TurningPointKind: String, Codable, Sendable {
-    case bottom = "筑底观察"
+    case bottomWatch = "筑底形成中"
+    case bottom = "筑底确认"
     case top = "高点警戒"
     case none = "暂无拐点"
     case unavailable = "信号不可用"
@@ -25,30 +26,49 @@ enum TurningPointEngine {
               now.timeIntervalSince(current.closeTime) < 30 * 60 else {
             return .unavailable(symbol: symbol, reason: "15分钟K线不足或过期")
         }
-        let previous = candles[candles.count - 2]
-        let history = candles[(candles.count - 21)..<(candles.count - 1)]
-        let range = current.high - current.low
-        guard range > 0, current.close > 0 else {
+        let candidate = candles[candles.count - 2]
+        let previous = candles[candles.count - 3]
+        let history = candles[(candles.count - 22)..<(candles.count - 2)]
+        let range = candidate.high - candidate.low
+        let currentRange = current.high - current.low
+        guard range > 0, currentRange > 0, current.close > 0,
+              current.closeTime.timeIntervalSince(candidate.closeTime) == 15 * 60 else {
             return .unavailable(symbol: symbol, reason: "K线数据异常")
         }
         let medianVolume = median(history.map(\.volume))
-        let activeVolume = medianVolume > 0 && current.volume >= medianVolume * 1.2
-        let previousRSI = rsi(candles, endingAt: candles.count - 2)
-        let currentRSI = rsi(candles, endingAt: candles.count - 1)
+        let activeVolume = medianVolume > 0 && candidate.volume >= medianVolume * 1.2
+        let previousRSI = rsi(candles, endingAt: candles.count - 3)
+        let candidateRSI = rsi(candles, endingAt: candles.count - 2)
         let priorLow = history.map(\.low).min()!
-        let priorHigh = history.map(\.high).max()!
+        let topHistory = candles[(candles.count - 21)..<(candles.count - 1)]
+        let topVolume = median(topHistory.map(\.volume))
+        let priorHigh = topHistory.map(\.high).max()!
 
-        if activeVolume && current.low <= priorLow * 1.003
-            && (current.close - current.low) / range >= 0.65
-            && current.close > current.open && current.close > previous.close
-            && previousRSI <= 42 && currentRSI > previousRSI {
-            return Self.result(symbol, .bottom, "试探近期低位后收回 · 动能回升 · 放量", current.closeTime)
-        }
-        if activeVolume && current.high >= priorHigh * 0.997
-            && (current.high - current.close) / range >= 0.65
-            && current.close < current.open && current.close < previous.close
-            && previousRSI >= 58 && currentRSI < previousRSI {
+        if topVolume > 0 && current.volume >= topVolume * 1.2
+            && current.high >= priorHigh * 0.997
+            && (current.high - current.close) / currentRange >= 0.65
+            && current.close < current.open && current.close < candidate.close
+            && candidateRSI >= 58 && rsi(candles, endingAt: candles.count - 1) < candidateRSI {
             return Self.result(symbol, .top, "试探近期高位后回落 · 动能转弱 · 放量", current.closeTime)
+        }
+        if activeVolume && candidate.low <= priorLow * 1.003
+            && (candidate.close - candidate.low) / range >= 0.65
+            && candidate.close > candidate.open && candidate.close > previous.close
+            && previousRSI <= 42 && candidateRSI > previousRSI
+            && current.close > candidate.high && current.close > current.open {
+            return Self.result(symbol, .bottom, "低位收回后下一根突破前高 · 放量确认", current.closeTime)
+        }
+        let watchHistory = candles[(candles.count - 21)..<(candles.count - 1)]
+        let watchMedianVolume = median(watchHistory.map(\.volume))
+        let watchPriorLow = watchHistory.map(\.low).min()!
+        let currentRSI = rsi(candles, endingAt: candles.count - 1)
+        if watchMedianVolume > 0 && current.volume >= watchMedianVolume * 1.2
+            && current.low <= watchPriorLow * 1.003
+            && (current.close - current.low) / currentRange >= 0.65
+            && current.close > current.open && current.close > candidate.close
+            && candidateRSI <= 42 && currentRSI > candidateRSI {
+            return Self.result(symbol, .bottomWatch,
+                               "低位放量收回 · 筑底形成中 · 等待下一根突破确认", current.closeTime)
         }
         return Self.result(symbol, .none, "当前没有满足观察条件", current.closeTime)
     }

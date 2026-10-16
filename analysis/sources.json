@@ -1,0 +1,45 @@
+{
+  "schemaVersion": 1,
+  "items": [{
+    "id": "signal-backtest",
+    "title": "ETH / CRCLB 信号样本外回测",
+    "assumptions": [
+      "信号在15分钟K线收盘时确认，固定持有2小时。",
+      "每笔完整交易扣除0.20%作为手续费与滑点合计成本。",
+      "前70%数据用于选择参数，后30%数据仅用于最终验证。"
+    ],
+    "queries": [{
+      "id": "validation-results",
+      "source": {
+        "label": "Binance public market data",
+        "files": [
+          {"label": "ETHUSDT 5m/15m/1h CSV"},
+          {"label": "CRCLBUSDT 5m/15m/1h CSV"},
+          {"label": "backtest_results.csv"}
+        ],
+        "metricDefinitions": [{
+          "label": "命中率",
+          "definition": "扣除0.20%成本后，固定持有2小时的交易净收益大于0的比例。"
+        }, {
+          "label": "平均净收益",
+          "definition": "所有非重叠交易扣除成本后的算术平均收益。"
+        }],
+        "filters": ["Closed candles only", "Out-of-sample final 30%", "Non-overlapping trades"],
+        "caveats": ["CRCLB历史较短，且结果只覆盖一个市场阶段；不代表未来收益。"]
+      },
+      "reportingPeriod": "2026-06-11 to 2026-09-14",
+      "columns": ["symbol", "direction", "variant", "trades", "win_rate", "avg_net_return"],
+      "rows": [
+        {"symbol":"ETHUSDT","direction":"buy","variant":"baseline","trades":206,"win_rate":"29.6%","avg_net_return":"-0.118%"},
+        {"symbol":"ETHUSDT","direction":"buy","variant":"optimized","trades":230,"win_rate":"33.0%","avg_net_return":"-0.160%"},
+        {"symbol":"ETHUSDT","direction":"sell","variant":"baseline","trades":64,"win_rate":"23.4%","avg_net_return":"-0.361%"},
+        {"symbol":"ETHUSDT","direction":"sell","variant":"optimized","trades":53,"win_rate":"22.6%","avg_net_return":"-0.377%"},
+        {"symbol":"CRCLBUSDT","direction":"buy","variant":"baseline","trades":186,"win_rate":"39.8%","avg_net_return":"-0.142%"},
+        {"symbol":"CRCLBUSDT","direction":"buy","variant":"optimized","trades":262,"win_rate":"37.4%","avg_net_return":"-0.097%"},
+        {"symbol":"CRCLBUSDT","direction":"sell","variant":"baseline","trades":97,"win_rate":"34.0%","avg_net_return":"-0.271%"},
+        {"symbol":"CRCLBUSDT","direction":"sell","variant":"optimized","trades":55,"win_rate":"32.7%","avg_net_return":"-0.220%"}
+      ],
+      "methods": [{"language":"python","code":"Chronological 70/30 split; parameter grid evaluated on training only; 2h non-overlapping returns; 0.20% round-trip cost; Wilson lower-bound ranking with >=20 training trades."}]
+    }]
+  }]
+}

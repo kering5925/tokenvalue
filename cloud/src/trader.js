@@ -1,11 +1,13 @@
 import { getSql, ensureSchema } from "./db.js";
-import { assessCRCLB } from "./strategy.js";
+import { assessCRCLB, assessCRCLBShadow, SHADOW_STRATEGY } from "./strategy.js";
 import { assessTurningPoint, recordObservation, TURNING_POINT_SOURCE } from "./observations.js";
+import { getShadowStatus, runShadowStrategy } from "./shadow.js";
 
 const ACTIVE_SYMBOL = "CRCLBUSDT";
-const STRATEGY = "crclb-underlying-v2";
+const STRATEGY = "crclb-underlying-v4";
 const BINANCE_URL = "https://data-api.binance.vision/api/v3";
 const NASDAQ_URL = "https://api.nasdaq.com/api/quote/CRCL/chart?assetclass=stocks";
+const FETCH_TIMEOUT_MS = 8_000;
 const SIDE_FEE_RATE = 0.0025;
 const RISK_PER_TRADE = 0.0035;
 const MAX_POSITION_FRACTION = 0.20;
@@ -14,9 +16,14 @@ const MAX_STOP_DISTANCE = 0.04;
 const REWARD_MULTIPLE = 1.8;
 const MAX_HOLD_MS = 90 * 60 * 1_000;
 
+export function feeBreakEvenPrice(entryPrice, feeRate = SIDE_FEE_RATE) {
+  return entryPrice * (1 + feeRate) / (1 - feeRate);
+}
+
 async function klines(symbol, interval, limit) {
   const response = await fetch(`${BINANCE_URL}/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`, {
     headers: { "cache-control": "no-cache" },
+    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
   });
   if (!response.ok) throw new Error(`Binance ${symbol} ${interval}: ${response.status}`);
   const now = Date.now();
@@ -27,6 +34,9 @@ async function klines(symbol, interval, limit) {
     low: Number(row[3]),
     close: Number(row[4]),
     volume: Number(row[5]),
+    quoteVolume: Number(row[7]),
+    takerBuyQuoteVolume: Number(row[10]),
+    takerBuyRatio: Number(row[7]) > 0 ? Number(row[10]) / Number(row[7]) : null,
   }));
 }
 
@@ -50,6 +60,17 @@ function regularSession(timestamp) {
   return !["Sat", "Sun"].includes(parts.weekday) && minutes >= 570 && minutes < 960;
 }
 
+function extendedSession(timestamp) {
+  const parts = easternParts(timestamp);
+  const minutes = Number(parts.hour) * 60 + Number(parts.minute);
+  return !["Sat", "Sun"].includes(parts.weekday) && minutes >= 240 && minutes < 1_200;
+}
+
+function numericPrice(value) {
+  const parsed = Number(String(value ?? "").replace(/[$,]/g, ""));
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
 function dateKey(timestamp) {
   const parts = easternParts(timestamp);
   return `${parts.year}-${parts.month}-${parts.day}`;
@@ -70,37 +91,62 @@ export async function crclSnapshot(now = Date.now()) {
       "user-agent": "Mozilla/5.0 (compatible; tokenvalue-paper-trader/2.0)",
       "cache-control": "no-cache",
     },
+    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
   });
   if (!response.ok) throw new Error(`Nasdaq CRCL chart: ${response.status}`);
   const payload = await response.json();
   const today = dateKey(now);
-  const points = (payload.data?.chart || [])
+  const allPoints = (payload.data?.chart || [])
     .filter((point) => point.x && Number.isFinite(Number(point.y)))
-    .map((point) => ({ timestamp: Number(point.x), price: Number(point.y) }))
-    .filter((point) => dateKey(point.timestamp) === today && regularSession(point.timestamp));
+    .map((point) => ({ timestamp: Number(point.x), price: Number(point.y) }));
+  const todayPoints = allPoints.filter((point) => dateKey(point.timestamp) === today);
+  const points = todayPoints.filter((point) => regularSession(point.timestamp));
   const latest = points.at(-1);
+  const latestExtended = todayPoints.at(-1);
+  const referenceFresh = Boolean(latestExtended && now - latestExtended.timestamp <= 10 * 60 * 1_000
+    && now >= latestExtended.timestamp);
+  const lastSalePrice = numericPrice(payload.data?.lastSalePrice);
+  const previousClose = numericPrice(payload.data?.previousClose);
   return {
     marketOpen: regularSession(now),
+    extendedOpen: extendedSession(now) && !regularSession(now),
     fresh: Boolean(latest && now - latest.timestamp <= 10 * 60 * 1_000 && now >= latest.timestamp),
     price: latest?.price ?? null,
     sessionOpen: points.at(0)?.price ?? null,
     ema20: points.length ? emaLast(points.slice(-100).map((point) => point.price), 20) : null,
     timestamp: latest?.timestamp ?? null,
+    referencePrice: referenceFresh ? latestExtended.price : lastSalePrice ?? previousClose,
+    referenceFresh,
+    referenceTimestamp: referenceFresh ? latestExtended.timestamp : null,
+    lastSalePrice,
+    previousClose,
   };
 }
 
 async function marketSnapshot() {
+  const shadowInputsPromise = Promise.all([
+    klines(ACTIVE_SYMBOL, "4h", 200),
+    klines("BTCUSDT", "4h", 200),
+    klines("ETHUSDT", "4h", 200),
+  ]).then(([fourHour, btcFourHour, ethFourHour]) => ({ fourHour, btcFourHour, ethFourHour }))
+    .catch((error) => ({ error }));
   const [fiveMinute, fifteenMinute, hourly, underlying] = await Promise.all([
     klines(ACTIVE_SYMBOL, "5m", 200),
     klines(ACTIVE_SYMBOL, "15m", 300),
     klines(ACTIVE_SYMBOL, "1h", 200),
     crclSnapshot().catch((error) => {
       console.warn(`CRCL quote unavailable: ${error.message}`);
-      return { marketOpen: regularSession(Date.now()), fresh: false, price: null };
+      return { marketOpen: regularSession(Date.now()), extendedOpen: extendedSession(Date.now()),
+        fresh: false, price: null, referencePrice: null, referenceFresh: false };
     }),
   ]);
+  const shadowInputs = await shadowInputsPromise;
   return {
     assessment: assessCRCLB(fiveMinute, fifteenMinute, hourly, underlying),
+    shadowAssessment: shadowInputs.error ? null
+      : assessCRCLBShadow(fifteenMinute, shadowInputs.fourHour, shadowInputs.btcFourHour,
+        shadowInputs.ethFourHour, underlying),
+    shadowError: shadowInputs.error?.message ?? null,
     price: fiveMinute.at(-1).close,
     underlying,
     fifteenMinute,
@@ -134,7 +180,7 @@ async function openPosition(price, assessment) {
         ${price * (1 + stopDistance * REWARD_MULTIPLE)}, ${price}, ${now}, ${STRATEGY})`,
     sql`INSERT INTO trades (symbol, side, price, quantity, fee, realized_pnl, reason, created_at, strategy)
       VALUES (${ACTIVE_SYMBOL}, 'BUY', ${price}, ${quantity}, ${fee}, NULL,
-        ${tokenOnly ? "CRCLB-only off-hours breakout" : `confirmed CRCL trend; premium ${assessment.premium?.toFixed(4)}`}, ${now}, ${STRATEGY})`,
+        ${tokenOnly ? "CRCLB-only off-hours pullback" : `confirmed CRCL trend; premium ${assessment.premium?.toFixed(4)}`}, ${now}, ${STRATEGY})`,
   ]);
   return true;
 }
@@ -180,9 +226,9 @@ async function retireLegacyPositions() {
   return { strategy: STRATEGY, started_at: now, starting_equity: equity };
 }
 
-async function runCRCLB() {
+async function runCRCLB(snapshot) {
   const sql = getSql();
-  const { assessment, price, underlying, fifteenMinute } = await marketSnapshot();
+  const { assessment, price, underlying, fifteenMinute } = snapshot;
   let [position] = await sql`SELECT * FROM positions WHERE symbol = ${ACTIVE_SYMBOL}`;
   let action = "none";
   if (position) {
@@ -196,14 +242,16 @@ async function runCRCLB() {
       await closePosition(position, price, "risk-reward-take-profit");
       position = undefined;
       action = "take-profit";
-    } else if (assessment.releasedSignal === "sell") {
-      await closePosition(position, price, assessment.reason);
-      position = undefined;
-      action = "sell";
     } else if (heldTooLong && price <= position.entry_price) {
       await closePosition(position, price, "time-stop");
       position = undefined;
       action = "time-stop";
+    } else if (assessment.releasedSignal === "risk") {
+      const breakEven = feeBreakEvenPrice(position.entry_price);
+      if (price > breakEven && position.stop_price < breakEven) {
+        await sql`UPDATE positions SET stop_price = ${breakEven} WHERE symbol = ${ACTIVE_SYMBOL}`;
+        action = "protect-profit";
+      }
     }
   }
 
@@ -233,16 +281,39 @@ async function runCRCLB() {
     reason: assessment.reason,
     closeTime: assessment.closeTime,
     close: assessment.close,
+    context: assessment.context,
   });
   return { symbol: ACTIVE_SYMBOL, price, action, underlying, ...assessment };
+}
+
+async function runV51Shadow(snapshot) {
+  const sql = getSql();
+  if (snapshot.shadowError || !snapshot.shadowAssessment) {
+    throw new Error(snapshot.shadowError || "V5.1 shadow inputs unavailable");
+  }
+  const { shadowAssessment: assessment, price, fifteenMinute } = snapshot;
+  const { equity } = await accountEquity();
+  const result = await runShadowStrategy(sql, price, assessment, equity);
+  await recordObservation(sql, SHADOW_STRATEGY, ACTIVE_SYMBOL, fifteenMinute, {
+    signal: assessment.rawSignal,
+    score: assessment.score,
+    reason: assessment.reason,
+    closeTime: assessment.closeTime,
+    close: assessment.close,
+    context: assessment.context,
+  });
+  return { ...result, assessment };
 }
 
 async function recordTurningPoints() {
   const sql = getSql();
   const results = {};
-  for (const symbol of ["ETHUSDT", "CRCLBUSDT"]) {
+  const assessments = await Promise.all(["ETHUSDT", "CRCLBUSDT"].map(async (symbol) => {
     const candles = await klines(symbol, "15m", 200);
     const assessment = assessTurningPoint(symbol, candles);
+    return { symbol, candles, assessment };
+  }));
+  for (const { symbol, candles, assessment } of assessments) {
     await recordObservation(sql, TURNING_POINT_SOURCE, symbol, candles, assessment);
     results[symbol] = assessment.signal;
   }
@@ -252,9 +323,14 @@ async function recordTurningPoints() {
 export async function runCycle() {
   await ensureSchema();
   const run = await retireLegacyPositions();
-  const result = await runCRCLB();
+  const snapshot = await marketSnapshot();
+  const result = await runCRCLB(snapshot);
+  const shadow = await runV51Shadow(snapshot).catch((error) => {
+    console.warn(`V5.1 shadow skipped: ${error.message}`);
+    return { strategy: SHADOW_STRATEGY, action: "error", error: error.message };
+  });
   const turningPoints = await recordTurningPoints();
-  return { strategy: STRATEGY, run, results: [result], turningPoints };
+  return { strategy: STRATEGY, run, results: [result], shadow, turningPoints };
 }
 
 export async function getStatus() {
@@ -265,6 +341,7 @@ export async function getStatus() {
   const signals = await sql`SELECT * FROM signal_state ORDER BY symbol`;
   const trades = await sql`SELECT * FROM trades ORDER BY id DESC LIMIT 50`;
   const [run] = await sql`SELECT * FROM strategy_runs WHERE strategy = ${STRATEGY}`;
+  const shadow = await getShadowStatus(sql);
   const equity = account.cash_usdt + positions.reduce((sum, position) => sum + position.quantity * position.last_price, 0);
   return {
     strategy: run ? {
@@ -276,5 +353,6 @@ export async function getStatus() {
     positions,
     signals,
     trades,
+    shadow,
   };
 }

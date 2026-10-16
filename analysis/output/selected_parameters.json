@@ -1,0 +1,34 @@
+{
+  "ETHUSDT_buy": {
+    "threshold": 55,
+    "rsi_low": 50,
+    "rsi_high": 65,
+    "volume_ratio": 0.0,
+    "require_trend": true
+  },
+  "ETHUSDT_sell": {
+    "threshold": 25,
+    "rsi_low": 50,
+    "rsi_high": 68,
+    "volume_ratio": 1.0,
+    "require_bear_trend": false,
+    "require_momentum_down": false,
+    "rsi_floor": 40
+  },
+  "CRCLBUSDT_buy": {
+    "threshold": 55,
+    "rsi_low": 50,
+    "rsi_high": 75,
+    "volume_ratio": 1.0,
+    "require_trend": false
+  },
+  "CRCLBUSDT_sell": {
+    "threshold": 35,
+    "rsi_low": 50,
+    "rsi_high": 68,
+    "volume_ratio": 0.8,
+    "require_bear_trend": true,
+    "require_momentum_down": false,
+    "rsi_floor": 45
+  }
+}

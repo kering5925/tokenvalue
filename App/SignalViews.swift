@@ -11,7 +11,7 @@ struct SignalBadge: View {
                 .frame(width: 7, height: 7)
             Text(assessment.signal.rawValue)
                 .font(compact ? .caption2.weight(.bold) : .caption.weight(.bold))
-            if assessment.signal != .paused && assessment.signal != .unavailable {
+            if assessment.signal == .buy || assessment.signal == .neutral {
                 Text("\(assessment.score)")
                     .font(compact ? .caption2.monospacedDigit() : .caption.monospacedDigit())
                     .foregroundStyle(.secondary)
@@ -23,7 +23,7 @@ struct SignalBadge: View {
     var color: Color {
         switch assessment.signal {
         case .buy: .green
-        case .sell: .red
+        case .sell, .risk: .red
         case .neutral: .orange
         case .paused: .secondary
         case .unavailable: .gray
@@ -65,6 +65,7 @@ struct TurningPointBadge: View {
 
     private var color: Color {
         switch assessment.kind {
+        case .bottomWatch: .orange
         case .bottom: .green
         case .top: .red
         case .none, .unavailable: .secondary

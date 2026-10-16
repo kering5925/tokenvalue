@@ -72,7 +72,7 @@ private struct SignalMenuRow: View {
     var body: some View {
         Text(
             "\(assessment.symbol) · \(assessment.signal.rawValue) "
-                + "\(assessment.signal == .paused || assessment.signal == .unavailable ? "" : "\(assessment.score) · ")"
+                + "\(assessment.signal == .buy || assessment.signal == .neutral ? "\(assessment.score) · " : "")"
                 + assessment.reasons.prefix(2).joined(separator: " / ")
         )
     }

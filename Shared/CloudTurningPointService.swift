@@ -28,6 +28,7 @@ enum CloudTurningPointService {
             }
             let kind: TurningPointKind
             switch point.kind {
+            case "bottom-watch": kind = .bottomWatch
             case "bottom": kind = .bottom
             case "top": kind = .top
             case "none": kind = .none

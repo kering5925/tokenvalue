@@ -20,7 +20,13 @@ struct TurningPointTests {
         down.append(Candle(symbol: lastDown.symbol, interval: lastDown.interval,
             openTime: lastDown.openTime, closeTime: lastDown.closeTime,
             open: 84, high: 86.2, low: 83.7, close: 86, volume: 200))
-        assert(TurningPointEngine.assess(symbol: "ETH", candles: down, now: now).kind == .bottom)
+        assert(TurningPointEngine.assess(symbol: "ETH", candles: down, now: now).kind == .bottomWatch)
+        down.append(Candle(symbol: lastDown.symbol, interval: lastDown.interval,
+            openTime: lastDown.openTime.addingTimeInterval(900),
+            closeTime: lastDown.closeTime.addingTimeInterval(900),
+            open: 86, high: 86.6, low: 85.9, close: 86.4, volume: 100))
+        assert(TurningPointEngine.assess(symbol: "ETH", candles: down,
+            now: now.addingTimeInterval(900)).kind == .bottom)
 
         var up = candles(descending: false)
         let lastUp = up.removeLast()
@@ -29,7 +35,8 @@ struct TurningPointTests {
             open: 116, high: 116.3, low: 113.8, close: 114, volume: 200))
         assert(TurningPointEngine.assess(symbol: "CRCLB", candles: up, now: now).kind == .top)
         assert(TurningPointEngine.assess(symbol: "ETH", candles: candles(descending: true), now: now).kind == .none)
-        assert(TurningPointEngine.assess(symbol: "ETH", candles: down, now: now.addingTimeInterval(1900)).kind == .unavailable)
+        assert(TurningPointEngine.assess(symbol: "ETH", candles: down,
+            now: now.addingTimeInterval(2800)).kind == .unavailable)
         print("Turning point tests passed")
     }
 }
